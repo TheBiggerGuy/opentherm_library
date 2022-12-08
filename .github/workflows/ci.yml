@@ -1,0 +1,67 @@
+# Much cribbed from https://github.com/esphome/esphome/blob/0c24d951ff07bccd982443733ecce0675e93833d/.github/workflows/ci.yml
+---
+name: CI
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+    branches: [esp32]
+
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # yamllint disable-line rule:line-length
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: test
+            name: Test OpenThermMaster Demo
+            file: examples/OpenThermMaster_Demo/OpenThermMaster_Demo.ino
+            board: espmxdevkit
+            pio_cache_key: test1
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        id: python
+        with:
+          python-version: "3.9"
+
+      - name: Cache virtualenv
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          # yamllint disable-line rule:line-length
+          key: venv-${{ steps.python.outputs.python-version }}-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            venv-${{ steps.python.outputs.python-version }}-
+
+      - name: Set up virtualenv
+        # yamllint disable rule:line-length
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -U pip
+          pip install -r requirements.txt -r requirements_optional.txt -r requirements_test.txt
+          pip install -e .
+          echo "${GITHUB_WORKSPACE}/.venv/bin" >> ${GITHUB_PATH}
+          echo "VIRTUAL_ENV=${GITHUB_WORKSPACE}/.venv" >> ${GITHUB_ENV}
+        # yamllint enable rule:line-length
+
+      - run: pio ci --lib="." --board ${{ matrix.board }} ${{ matrix.file }}
+        if: matrix.id == 'test'
+        env:
+          # Also cache libdeps, store them in a ~/.platformio subfolder
+          PLATFORMIO_LIBDEPS_DIR: ~/.platformio/libdeps
